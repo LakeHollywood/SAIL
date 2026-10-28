@@ -3,3 +3,9 @@ node_modules/
 dist/
 build/
 *.log
+
+# Rust build artifacts
+rust/target/
+*.db
+*.db-wal
+*.db-shm

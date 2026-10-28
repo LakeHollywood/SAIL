@@ -1,0 +1,22 @@
+[package]
+name = "sovereign-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Sovereign Engine startup orchestrator: fail-closed hardware boundary verification, pinned real-time telemetry runtime, and SEAL daemon spawning."
+
+[lib]
+name = "sovereign_engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sovereign-boot"
+path = "src/main.rs"
+
+[dependencies]
+bitflags = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+core_affinity = "0.8"
+libc = "0.2"
