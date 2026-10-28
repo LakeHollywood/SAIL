@@ -9,9 +9,9 @@ use std::time::Duration;
 use rusqlite::Connection;
 use tokio::sync::broadcast;
 
-/// Status transitions for quarantine queue rows.
-pub const STATUS_QUARANTINED: i64 = 0;
-pub const STATUS_SEALED: i64 = 1;
+use crate::zero_copy_seal::{ZeroCopyQuarantinePipeline, STATUS_QUARANTINED, STATUS_SEALED};
+
+pub use crate::zero_copy_seal::STATUS_ISOLATED;
 
 pub struct SealDaemon {
     conn: Connection,
@@ -58,44 +58,15 @@ impl SealDaemon {
         }
     }
 
-    /// One cryptographic audit pass over pending quarantine rows.
+    /// One cryptographic audit pass over pending quarantine rows, executed
+    /// through the rkyv zero-copy pipeline: each archived BLOB is validated
+    /// in place (bytecheck) before any dereference, sealed on success, and
+    /// fail-closed isolated (status = 2) on corruption.
+    ///
     /// Returns the number of records transitioned to SEALED.
     fn audit_pass(&self) -> Result<usize, String> {
-        let tx = self
-            .conn
-            .unchecked_transaction()
-            .map_err(|e| format!("SEAL tx begin failed: {e}"))?;
-
-        let mut stmt = tx
-            .prepare(
-                "SELECT event_id FROM quarantine_queue WHERE status = ?1 LIMIT ?2",
-            )
-            .map_err(|e| format!("SEAL query prepare failed: {e}"))?;
-
-        let ids: Vec<Vec<u8>> = stmt
-            .query_map(
-                rusqlite::params![STATUS_QUARANTINED, self.max_batch as i64],
-                |row| row.get::<_, Vec<u8>>(0),
-            )
-            .map_err(|e| format!("SEAL query failed: {e}"))?
-            .collect::<Result<_, _>>()
-            .map_err(|e| format!("SEAL row decode failed: {e}"))?;
-
-        drop(stmt);
-
-        let count = ids.len();
-        if count > 0 {
-            // Placeholder for the post-quantum signature verification path;
-            // verified rows are marked SEALED atomically within this tx.
-            tx.execute(
-                "UPDATE quarantine_queue SET status = ?1 WHERE event_id IN (SELECT event_id FROM quarantine_queue WHERE status = ?2 LIMIT ?3)",
-                rusqlite::params![STATUS_SEALED, STATUS_QUARANTINED, count as i64],
-            )
-            .map_err(|e| format!("SEAL update failed: {e}"))?;
-        }
-
-        tx.commit().map_err(|e| format!("SEAL tx commit failed: {e}"))?;
-        Ok(count)
+        ZeroCopyQuarantinePipeline::drain_and_seal(&self.conn, self.max_batch)
+            .map_err(|e| format!("SEAL zero-copy audit pass failed: {e}"))
     }
 
     /// Force a WAL checkpoint so sealed records are durable in the main DB

@@ -9,8 +9,12 @@
 
 pub mod orchestrator;
 pub mod seal_daemon;
+pub mod zero_copy_seal;
 
 pub use orchestrator::{
     HardwareFlags, HardwareValidator, SovereignEngineOrchestrator, TelemetryRuntimeBuilder,
 };
 pub use seal_daemon::SealDaemon;
+pub use zero_copy_seal::{
+    ArchivedSealEventRecord, SealEventRecord, SealPayload, ZeroCopyQuarantinePipeline,
+};
